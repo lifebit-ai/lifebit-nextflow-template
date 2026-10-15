@@ -1,0 +1,8 @@
+# Nextflow
+.nextflow*
+work/
+results/
+null/
+
+# OS
+.DS_Store

@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Install Nextflow
+        run: |
+          wget -qO- get.nextflow.io | bash
+          sudo mv nextflow /usr/local/bin/
+
+      - name: Lint pipeline
+        run: nextflow lint .
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        nxf_ver: ["22.10.8", ""]  # "" = latest stable release
+        profile: ["test", "test_full"]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Install Nextflow
+        env:
+          NXF_VER: ${{ matrix.nxf_ver }}
+        run: |
+          export JAVA_HOME=${JAVA_HOME_17_X64}
+          wget -qO- get.nextflow.io | bash
+          sudo mv nextflow /usr/local/bin/
+
+      - name: Run pipeline with -profile ${{ matrix.profile }},docker
+        env:
+          NXF_VER: ${{ matrix.nxf_ver }}
+        run: |
+          export JAVA_HOME=${JAVA_HOME_17_X64}  # Java 17 is supported by both old and new Nextflow
+          nextflow run ${GITHUB_WORKSPACE} -profile ${{ matrix.profile }},docker --outdir results
+          tree -h results
+          test -s results/report/report.html
+          test $(ls results/summaries | wc -l) -eq ${{ matrix.profile == 'test' && 2 || 4 }}

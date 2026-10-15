@@ -1,0 +1,36 @@
+---
+title: "Pipeline report"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+params:
+  summary: "all_samples_summary.csv"
+---
+
+<img src="logo.png" width="100" style="position:absolute; top:10px; right:10px;" />
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+library(reactable)
+summary <- read.csv(params$summary, stringsAsFactors = FALSE)
+```
+
+# Overview
+
+This report summarises **`r nrow(summary)`** samples.
+
+# Per-sample summary
+
+```{r table}
+reactable(summary, searchable = TRUE, filterable = TRUE, highlight = TRUE, bordered = TRUE)
+```
+
+# Total counts per sample
+
+```{r barplot, fig.height = 4}
+par(mar = c(5, 8, 1, 1))
+barplot(summary$total_counts, names.arg = summary$sample, horiz = TRUE, las = 1,
+        col = "#2c7fb8", border = NA, xlab = "Total counts")
+```
