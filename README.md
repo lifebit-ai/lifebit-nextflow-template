@@ -1,6 +1,6 @@
 <img src="assets/report/logo.png" alt="Lifebit" width="120" align="right" />
 
-# subworkflow-template-nf
+# lifebit-nextflow-template
 
 A minimal, working template for building modular [Nextflow](https://www.nextflow.io/) DSL2 pipelines.
 
