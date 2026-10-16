@@ -1,6 +1,6 @@
 <img src="assets/report/logo.png" alt="Lifebit" width="120" align="right" />
 
-# subworkflow-template-nf
+# lifebit-nextflow-template
 
 A minimal, working template for building modular [Nextflow](https://www.nextflow.io/) DSL2 pipelines.
 
@@ -40,6 +40,7 @@ conf/
   test_full.config            'test_full' profile
 testdata/                     Small input data used by the test profiles
 nextflow.config               Manifest, parameters, profiles and execution reports
+nextflow_schema.json          Parameter descriptions used by the CloudOS Platform UI (see below)
 ```
 
 ## The example pipeline
@@ -79,7 +80,6 @@ sample_B,s3://my-bucket/data/sample_B.csv
 | `--input`  | -         | Samplesheet (mandatory)                  |
 | `--outdir` | `results` | Directory where the results are published |
 | `--help`   | `false`   | Print the usage message and exit         |
-| `--lifebit_platform_executor` | `local` | Executor used by the job. Set automatically by CloudOS (see [Executors](#executors)) |
 
 ### Output
 
@@ -109,20 +109,6 @@ Profiles are combined with commas, e.g. `-profile test,docker`.
 When running on a cloud platform (e.g. AWS Batch or Azure Batch), the platform provides the
 executor and container settings, so only the test profile is needed (e.g. `-profile test`).
 
-### Executors
-
-`conf/cloud-provider.config` applies executor-specific settings according to
-`--lifebit_platform_executor`, which CloudOS sets automatically for each job:
-
-| Executor     | Settings                                                                                        |
-| ------------ | ----------------------------------------------------------------------------------------------- |
-| `awsbatch`   | None needed: AWS Batch picks an instance that fits each task                                     |
-| `azurebatch` | `conf/azurebatch.config`: one pool of fixed-size VMs per resource label (VM sizes configurable with `--azure_vm_type_low/medium/high`) |
-| `local`, ... | None                                                                                            |
-
-When adapting the template, rename the Azure pools after your pipeline: pools are shared by all
-the pipelines of a Batch account.
-
 ### Why the test data is inside the repository
 
 The test profiles only use files from `testdata/`. Nextflow stages these files to the work
@@ -131,6 +117,17 @@ same way locally, on AWS, on Azure, and in workspaces behind a firewall. The onl
 resource is the container image, pulled from the configured container registry.
 
 Keep test datasets small (a few MB at most) so this approach stays practical.
+
+### Why there is a `nextflow_schema.json`
+
+`nextflow_schema.json` describes the pipeline parameters (type, default, description, grouping,
+mandatory or not). It is only used by the CloudOS Platform UI, to build the launch form and
+validate the values entered there. It brings no benefit when running locally: Nextflow ignores
+it, and the defaults still come from `nextflow.config`. Keep the two files in sync when adding
+or changing a parameter.
+
+Only list the analysis parameters there. Execution-related parameters (e.g. the `azure_*`
+parameters of `conf/azurebatch.config`) are deliberately left out of the schema.
 
 ## Adapting the template to your pipeline
 
@@ -143,7 +140,7 @@ Keep test datasets small (a few MB at most) so this approach stays practical.
    pass values as inputs instead.
 5. **Parse your inputs** in `main.nf` and pass them to the subworkflow as channels.
 6. **Declare every parameter** with a default value in the `params` block of `nextflow.config`,
-   and document it in `helpMessage()` in `main.nf` and in this README.
+   and document it in `helpMessage()` in `main.nf`, in `nextflow_schema.json` and in this README.
 7. **Set the container** of each process in `conf/containers.config`. Always pin an explicit
    version tag and never use `latest`: workspaces that pull images through a registry mirror or
    proxy only resolve explicitly tagged images, and pinned tags make results reproducible.

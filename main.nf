@@ -1,7 +1,7 @@
 #!/usr/bin/env nextflow
 /*
 ========================================================================================
-    subworkflow-template-nf
+    lifebit-nextflow-template
 ========================================================================================
     Entry point of the pipeline. It is responsible for:
       1. validating the parameters
