@@ -4,50 +4,114 @@ on:
   push:
     branches:
       - main
-      - dev
   pull_request:
   workflow_dispatch:
 
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Nextflow is installed from the self-contained release asset on GitHub and verified against a
+# sha256 pinned here. The NEXTFLOW_* values below are the newest supported release; the test matrix
+# overrides them for older releases. To bump a version, update version and sha256 together:
+#   gh api repos/nextflow-io/nextflow/releases/tags/v<VERSION> \
+#     --jq '.assets[] | select(.name | endswith("-dist")) | .digest'
+# Releases before 24.07 publish the asset as nextflow-<VERSION>-all instead of -dist.
+env:
+  NEXTFLOW_VERSION: "26.10.2"
+  NEXTFLOW_ASSET: dist
+  NEXTFLOW_SHA256: "14d668a3daca7d522e9a45140f4208b6a9e36a1d3ffd75de3d72aa3ba013fbe6"
+
 jobs:
   lint:
+    name: Lint
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Install Nextflow
         run: |
-          wget -qO- get.nextflow.io | bash
-          sudo mv nextflow /usr/local/bin/
+          curl --fail --silent --show-error --location --output nextflow \
+            "https://github.com/nextflow-io/nextflow/releases/download/v${NEXTFLOW_VERSION}/nextflow-${NEXTFLOW_VERSION}-${NEXTFLOW_ASSET}"
+          echo "${NEXTFLOW_SHA256}  nextflow" | sha256sum --check --strict
+          chmod +x nextflow
+          sudo mv nextflow /usr/local/bin/nextflow
+          nextflow -version
 
       - name: Lint pipeline
         run: nextflow lint .
 
   test:
+    name: Test (Nextflow ${{ matrix.nxf.version || 'latest' }}, ${{ matrix.profile }})
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
-        nxf_ver: ["22.10.8", ""]  # "" = latest stable release
-        profile: ["test", "test_full"]
+        nxf:
+          - version: "22.10.8"
+            asset: all
+            sha256: "56c8979edada822a5f8a75721dbb8079a4dd8c94b9688337fc3cc95a15e3e7b1"
+          - {}  # newest supported release, from the workflow-level NEXTFLOW_* values
+        profile:
+          - test
+          - test_full
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Install Nextflow
         env:
-          NXF_VER: ${{ matrix.nxf_ver }}
+          NEXTFLOW_VERSION: ${{ matrix.nxf.version || env.NEXTFLOW_VERSION }}
+          NEXTFLOW_ASSET: ${{ matrix.nxf.asset || env.NEXTFLOW_ASSET }}
+          NEXTFLOW_SHA256: ${{ matrix.nxf.sha256 || env.NEXTFLOW_SHA256 }}
         run: |
           export JAVA_HOME=${JAVA_HOME_17_X64}
-          wget -qO- get.nextflow.io | bash
-          sudo mv nextflow /usr/local/bin/
+          curl --fail --silent --show-error --location --output nextflow \
+            "https://github.com/nextflow-io/nextflow/releases/download/v${NEXTFLOW_VERSION}/nextflow-${NEXTFLOW_VERSION}-${NEXTFLOW_ASSET}"
+          echo "${NEXTFLOW_SHA256}  nextflow" | sha256sum --check --strict
+          chmod +x nextflow
+          sudo mv nextflow /usr/local/bin/nextflow
+          nextflow -version
 
-      - name: Run pipeline with -profile ${{ matrix.profile }},docker
+      - name: Run pipeline
         env:
-          NXF_VER: ${{ matrix.nxf_ver }}
+          PROFILE: ${{ matrix.profile }}
+          EXPECTED_SUMMARIES: ${{ matrix.profile == 'test' && 2 || 4 }}
         run: |
           export JAVA_HOME=${JAVA_HOME_17_X64}  # Java 17 is supported by both old and new Nextflow
-          nextflow run ${GITHUB_WORKSPACE} -profile ${{ matrix.profile }},docker --outdir results
+          nextflow run "${GITHUB_WORKSPACE}" -profile "${PROFILE},docker" --outdir results
           tree -h results
           test -s results/report/report.html
-          test $(ls results/summaries | wc -l) -eq ${{ matrix.profile == 'test' && 2 || 4 }}
+          test "$(find results/summaries -type f | wc -l)" -eq "${EXPECTED_SUMMARIES}"
+
+  zizmor:
+    name: Workflow security audit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read  # zizmor online audits read workflow run metadata
+      security-events: write  # upload SARIF results to the Security tab
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run zizmor
+        uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4
+        with:
+          version: "1.30.1"
+          persona: pedantic
+          # SARIF upload needs a write token, which pull requests from forks do not get.
+          advanced-security: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
